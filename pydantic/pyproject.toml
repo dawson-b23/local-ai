@@ -1,0 +1,7 @@
+[project]
+name = "pydantic"
+version = "0.1.0"
+description = "Pydantic AI and streamlit implementation of UI and AI for local H&H Model "
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []

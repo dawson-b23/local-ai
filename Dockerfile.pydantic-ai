@@ -1,0 +1,7 @@
+FROM python:3.11-slim
+WORKDIR /app
+COPY pydantic-ai/ /app/
+RUN pip install uv
+RUN uv pip install --system -r requirements.txt
+EXPOSE 8000 8501
+CMD ["sh", "-c", "uvicorn main:app --port 8000 & streamlit run app.py --server.port 8501"]

@@ -1,0 +1,185 @@
+# pydantic-ai/app.py
+import streamlit as st
+from streamlit_chat import message
+import requests
+from supabase import create_client, Client
+from models import QueryInput
+from database import save_chat_message, get_chat_history
+import uuid
+import os
+from dotenv import load_dotenv
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+load_dotenv()
+
+# Initialize Supabase client
+SUPABASE_URL = os.getenv("SUPABASE_URL", "http://localhost:8000")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Define FastAPI endpoint
+FASTAPI_URL = "http://localhost:9999/rag-docs"
+
+# Set page config at the start
+st.set_page_config(page_title="H&H AI Assistant", page_icon="🤖", layout="wide")
+
+def sign_up(email, password):
+    try:
+        user = supabase.auth.sign_up({"email": email, "password": password})
+        return user
+    except Exception as e:
+        st.error(f"Registration failed: {str(e)}")
+        return None
+
+def sign_in(email, password):
+    try:
+        user = supabase.auth.sign_in_with_password({"email": email, "password": password})
+        return user
+    except Exception as e:
+        st.error(f"Login failed: {str(e)}")
+        return None
+
+def sign_out():
+    try:
+        supabase.auth.sign_out()
+        st.session_state.user_id = None
+        st.session_state.user_email = None
+        st.session_state.session_id = None
+        st.session_state.messages = []
+        st.session_state.sessions = []
+        st.rerun()
+    except Exception as e:
+        st.error(f"Logout failed: {str(e)}")
+
+def main_app():
+    # Display company logo
+    st.image("logo.png", width=150)  # Replace with your logo path
+
+    # Initialize session state
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
+    if "messages" not in st.session_state:
+        st.session_state.messages = get_chat_history(st.session_state.session_id)
+    if "sessions" not in st.session_state:
+        try:
+            response = supabase.table("chat_history").select("sessionid", distinct=True).execute()
+            st.session_state.sessions = [row["sessionid"] for row in response.data]
+        except Exception as e:
+            logger.error(f"Error fetching sessions: {str(e)}")
+            st.session_state.sessions = [st.session_state.session_id]
+    if "user_id" not in st.session_state:
+        try:
+            user = supabase.auth.get_user()
+            st.session_state.user_id = user.user.id if user and user.user else f"anon_{st.session_state.session_id}"
+            st.session_state.user_email = user.user.email if user and user.user else "Anonymous"
+        except Exception as e:
+            logger.warning(f"Supabase Auth error: {str(e)}. Using anonymous ID.")
+            st.session_state.user_id = f"anon_{st.session_state.session_id}"
+            st.session_state.user_email = "Anonymous"
+
+    # Sidebar for chat sessions and user info
+    with st.sidebar:
+        st.header("H&H AI Assistant")
+        st.image("logo.png", width=100)  # Smaller logo in sidebar
+        st.write(f"Logged in as: {st.session_state.user_email}")
+        if st.button("Logout"):
+            sign_out()
+        
+        st.header("Chat Sessions")
+        selected_session = st.selectbox("Select Session", st.session_state.sessions, key="session_select")
+        if st.button("New Session"):
+            st.session_state.session_id = str(uuid.uuid4())
+            st.session_state.messages = []
+            if st.session_state.session_id not in st.session_state.sessions:
+                st.session_state.sessions.append(st.session_state.session_id)
+        if st.button("Delete Session"):
+            try:
+                supabase.table("chat_history").delete().eq("sessionid", st.session_state.session_id).execute()
+                st.session_state.sessions.remove(st.session_state.session_id)
+                st.session_state.session_id = str(uuid.uuid4())
+                st.session_state.messages = []
+            except Exception as e:
+                st.error(f"Error deleting session: {str(e)}")
+
+        st.header("File Ingestion")
+        uploaded_file = st.file_uploader("Upload a file (PDF, CSV, Excel, DOCX)", type=["pdf", "csv", "xlsx", "docx"])
+        if uploaded_file:
+            file_path = f"/tmp/{uploaded_file.name}"
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            try:
+                response = requests.post("http://localhost:9999/ingest-file", json={"file_path": file_path})
+                response.raise_for_status()
+                st.success(response.json().get("status", "File ingested successfully"))
+            except Exception as e:
+                st.error(f"Error ingesting file: {str(e)}")
+
+    # Main chat interface
+    st.title("H&H AI Assistant")
+    st.write("Ask questions about Press20 data, documents, or perform calculations.")
+
+    # Chat container to keep input at the bottom
+    chat_container = st.container()
+    with chat_container:
+        # Display chat history
+        for i, msg in enumerate(st.session_state.messages):
+            if msg["role"] == "user":
+                message(msg["content"], is_user=True, key=f"user_{i}")
+            else:
+                message(msg["content"], is_user=False, key=f"assistant_{i}")
+
+    # Fixed chat input at the bottom
+    with st.form(key="chat_form", clear_on_submit=True):
+        user_input = st.text_input("Your question:", key="user_input")
+        submit_button = st.form_submit_button("Send")
+
+        if submit_button and user_input:
+            st.session_state.messages.append({"role": "user", "content": user_input})
+            save_chat_message(st.session_state.user_id, st.session_state.session_id, {"role": "user", "content": user_input})
+            
+            try:
+                response = requests.post(
+                    FASTAPI_URL,
+                    json=QueryInput(chatInput=user_input, sessionId=st.session_state.session_id).dict()
+                )
+                response.raise_for_status()
+                result = response.json().get("response", "No response received.")
+                st.session_state.messages.append({"role": "assistant", "content": result})
+                save_chat_message(st.session_state.user_id, st.session_state.session_id, {"role": "assistant", "content": result})
+            except Exception as e:
+                logger.error(f"Error processing query: {str(e)}")
+                result = f"Error: {str(e)}"
+                st.session_state.messages.append({"role": "assistant", "content": result})
+                save_chat_message(st.session_state.user_id, st.session_state.session_id, {"role": "assistant", "content": result})
+            st.rerun()
+
+def auth_screen():
+    st.image("logo.png", width=150)  # Company logo on login page
+    st.title("🔐 H&H AI Assistant Login")
+    option = st.selectbox("Choose an action:", ["Login", "Sign Up"])
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+
+    if option == "Sign Up" and st.button("Register"):
+        user = sign_up(email, password)
+        if user and user.user:
+            st.success("Registration successful. Please log in.")
+
+    if option == "Login" and st.button("Login"):
+        user = sign_in(email, password)
+        if user and user.user:
+            st.session_state.user_id = user.user.id
+            st.session_state.user_email = user.user.email
+            st.session_state.session_id = str(uuid.uuid4())
+            st.session_state.messages = []
+            st.session_state.sessions = []
+            st.success(f"Welcome back, {email}!")
+            st.rerun()
+
+if "user_id" not in st.session_state or "user_email" not in st.session_state:
+    auth_screen()
+else:
+    main_app()

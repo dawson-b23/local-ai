@@ -1,0 +1,135 @@
+# pydantic-ai/agents.py
+from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain.prompts import PromptTemplate
+from langchain.tools import Tool
+from langchain_core.output_parsers import StrOutputParser
+from database import setup_vector_store, query_press20_data, query_document_rows, get_chat_history
+from datetime import datetime
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+llm = ChatOllama(model="llama3.1:8b", base_url=os.getenv("OLLAMA_URL"))
+
+def create_press20_agent():
+    tools = [
+        Tool(
+            name="Press20_Query",
+            func=query_press20_data,
+            description="Query the press20_data table in Supabase for Press20-related data (e.g., shot_num, overallpassfail, actnozzletemp)."
+        )
+    ]
+    prompt = PromptTemplate.from_template(
+        """
+        You are a personal assistant for Press20 data queries, mimicking an n8n workflow.
+        Use the Press20_Query tool for queries about Press20 (e.g., shot_num, overallpassfail, actnozzletemp).
+        If the query doesn't require a tool, respond with '[FINAL ANSWER] <your_response>'.
+        Always include 'Action:' and 'Action Input:' or '[FINAL ANSWER]' in your output.
+        If no answer is found, return '[FINAL ANSWER] I couldn't find an answer. Please check the data or refine your query.'
+
+        Available tools:
+        {tools}
+
+        Tool names: {tool_names}
+
+        {input}
+
+        Scratchpad: {agent_scratchpad}
+        """
+    )
+    agent = create_react_agent(llm, tools, prompt)
+    return AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True, max_iterations=5)
+
+def create_general_rag_agent():
+    vector_store = setup_vector_store()
+    tools = [
+        Tool(
+            name="RAG_Search",
+            func=vector_store.as_retriever().get_relevant_documents,
+            description="Use RAG to look up information in the document knowledgebase."
+        ),
+        Tool(
+            name="Document_Rows_Query",
+            func=query_document_rows,
+            description="Query the document_rows table in Supabase for tabular data."
+        ),
+        Tool(
+            name="Chat_History_Query",
+            func=lambda x: get_chat_history(x),
+            description="Retrieve chat history for a given session ID."
+        )
+    ]
+    prompt = PromptTemplate.from_template(
+        """
+        You are a personal assistant for document-related queries, mimicking an n8n workflow.
+        Start with RAG_Search for document content.
+        Use Document_Rows_Query for tabular data if RAG doesn't help.
+        Use Chat_History_Query to check past interactions for context.
+        If no tool is needed, respond with '[FINAL ANSWER] <your_response>'.
+        Always include 'Action:' and 'Action Input:' or '[FINAL ANSWER]' in your output.
+        If no answer is found, return '[FINAL ANSWER] I couldn't find an answer. Please check the data or refine your query.'
+
+        Available tools:
+        {tools}
+
+        Tool names: {tool_names}
+
+        {input}
+
+        Scratchpad: {agent_scratchpad}
+        """
+    )
+    agent = create_react_agent(llm, tools, prompt)
+    return AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True, max_iterations=5)
+
+def create_master_agent():
+    press20_agent = create_press20_agent()
+    general_rag_agent = create_general_rag_agent()
+    tools = [
+        Tool(
+            name="Press20",
+            func=press20_agent.invoke,
+            description="Use for ANY Press20-related questions (e.g., shot_num, overallpassfail, actnozzletemp)."
+        ),
+        Tool(
+            name="General_RAG",
+            func=general_rag_agent.invoke,
+            description="Use for document-related or general queries not related to Press20."
+        ),
+        Tool(
+            name="Calculator",
+            func=lambda x: str(numexpr.evaluate(x)),
+            description="Use for simple calculations."
+        ),
+        Tool(
+            name="Think",
+            func=lambda x: f"Thinking: {x}",
+            description="Use to verify steps or if stuck."
+        )
+    ]
+    prompt = PromptTemplate.from_template(
+        """
+        You are an orchestrator agent for H&H, mimicking an n8n workflow.
+        - For Press20 queries (e.g., shot_num, overallpassfail, actnozzletemp), use the Press20 tool.
+        - For document or general queries, use General_RAG.
+        - For calculations, use Calculator.
+        - Use Think to verify steps.
+        - For vague or conversational queries (e.g., "what can you do"), respond with '[FINAL ANSWER] <describe capabilities>').
+        - Always include 'Action:' and 'Action Input:' or '[FINAL ANSWER]' in your output.
+        - If no answer is found, return '[FINAL ANSWER] I couldn't find an answer. Please check the data or refine your query.'
+
+        Available tools:
+        {tools}
+
+        Tool names: {tool_names}
+
+        Current date/time: {now}
+
+        {input}
+
+        Scratchpad: {agent_scratchpad}
+        """
+    ).partial(now=str(datetime.now()))
+    agent = create_react_agent(llm, tools, prompt)
+    return AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True, max_iterations=5)

@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "langfuse-langchain": "^3.38.1"
+  }
+}

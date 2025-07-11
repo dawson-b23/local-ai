@@ -1,0 +1,36 @@
+# pydantic-ai/main.py
+from fastapi import FastAPI, HTTPException
+from models import QueryInput
+from agents import create_master_agent
+from ingestion import process_file
+from datetime import datetime
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="H&H AI Assistant API")
+
+@app.post("/rag-docs")
+async def handle_query(query: QueryInput):
+    master_agent = create_master_agent()
+    try:
+        logger.debug(f"Processing query: {query.chatInput}, session: {query.sessionId}")
+        response = master_agent.invoke({"input": query.chatInput}, timeout=30)
+        logger.debug(f"Agent response: {response}")
+        return {"response": response["output"]}
+    except Exception as e:
+        logger.error(f"Agent error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"No good answer found. Please contact support at {datetime.now()}. Error: {str(e)}"
+        )
+
+@app.post("/ingest-file")
+async def ingest_file_endpoint(file: dict):
+    try:
+        result = process_file(file["file_path"])
+        return {"status": result}
+    except Exception as e:
+        logger.error(f"Ingestion error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error ingesting file: {str(e)}")

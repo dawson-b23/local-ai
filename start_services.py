@@ -219,18 +219,18 @@ def check_and_fix_docker_compose_for_searxng():
 
 def main():
     parser = argparse.ArgumentParser(description='Start the local AI and Supabase services.')
-    parser.add_argument('--profile', choices=['cpu', 'gpu-nvidia', 'gpu-amd', 'none'], default='cpu',
-                      help='Profile to use for Docker Compose (default: cpu)')
+    parser.add_argument('--profile', choices=['cpu', 'gpu-nvidia', 'gpu-amd', 'none'], default='gpu-nvidia',
+                      help='Profile to use for Docker Compose (default: gpu nvidia)')
     parser.add_argument('--environment', choices=['private', 'public'], default='private',
                       help='Environment to use for Docker Compose (default: private)')
     args = parser.parse_args()
 
-    clone_supabase_repo()
+    #clone_supabase_repo()
     prepare_supabase_env()
 
     # Generate SearXNG secret key and check docker-compose.yml
-    generate_searxng_secret_key()
-    check_and_fix_docker_compose_for_searxng()
+    #generate_searxng_secret_key()
+    #check_and_fix_docker_compose_for_searxng()
 
     stop_existing_containers(args.profile)
 

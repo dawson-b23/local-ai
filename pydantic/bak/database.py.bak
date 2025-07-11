@@ -1,0 +1,314 @@
+# pydantic-ai/database.py
+from supabase import create_client, Client
+from langchain_ollama import OllamaEmbeddings
+from langchain_community.vectorstores import SupabaseVectorStore
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "http://localhost:8000")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def create_tables():
+    pass
+
+def insert_metadata(metadata):
+    data = {
+        "id": metadata.id,
+        "title": metadata.title,
+        "data_schema": metadata.data_schema,
+        "created_at": metadata.created_at.isoformat() if metadata.created_at else None
+    }
+    supabase.table("document_metadata").upsert(data).execute()
+
+def insert_press20_data(data):
+    data_dict = data.dict(exclude_unset=True)
+    supabase.table("press20_data").insert(data_dict).execute()
+
+def insert_document_row(dataset_id: str, row_data: dict):
+    data = {"dataset_id": dataset_id, "row_data": row_data}
+    supabase.table("document_rows").insert(data).execute()
+
+def setup_vector_store():
+    embeddings = OllamaEmbeddings(model="nomic-embed-text:latest", base_url=os.getenv("OLLAMA_URL"))
+    vector_store = SupabaseVectorStore(
+        client=supabase,
+        embedding=embeddings,
+        table_name="documents",
+        query_name="match_documents"
+    )
+    return vector_store
+
+def query_press20_data(query: str):
+    response = supabase.rpc("query_press20_data", {"query_text": query}).execute()
+    return response.data
+
+def query_document_rows(query: str):
+    response = supabase.rpc("query_document_rows", {"query_text": query}).execute()
+    return response.data
+
+def save_chat_message(user_id: str, session_id: str, message: dict):
+    data = {
+        "userid": user_id,
+        "sessionid": session_id,
+        "message": message
+    }
+    supabase.table("chat_history").insert(data).execute()
+
+def get_chat_history(session_id: str):
+    response = supabase.table("chat_history").select("message").eq("sessionid", session_id).order("id").execute()
+    return [row["message"] for row in response.data]
+
+    #def create_tables():
+#    # Supabase tables are typically created via migrations or the dashboard.
+#    # For simplicity, assume tables exist or create them via Supabase SQL editor:
+#    # document_metadata, press20_data, document_rows, documents (with vector extension)
+#    pass  # Run SQL migrations in Supabase dashboard if needed
+#    
+#    ***************************************
+#    run this in supbase sql editor to create tables 
+#    -- In Supabase SQL Editor
+#        create or replace function query_press20_data(query_text text)
+#        returns table (id integer, shot_num integer, overallPassFail text, dataset_id text, ...)
+#        as $$
+#        begin
+#            return query select * from press20_data where to_tsvector('english', overallPassFail || ' ' || cameratimestamp) @@ to_tsquery(query_text);
+#        end;
+#        $$ language plpgsql;
+#
+#        create or replace function query_document_rows(query_text text)
+#        returns table (id integer, dataset_id text, row_data jsonb)
+#        as $$
+#        begin
+#            return query select * from document_rows where row_data::text ilike '%' || query_text || '%';
+#        end;
+#        $$ language plpgsql;
+#    with engine.connect() as conn:
+#        conn.execute(text("""
+#            CREATE TABLE IF NOT EXISTS document_metadata (
+#                id TEXT PRIMARY KEY,
+#                title TEXT,
+#                created_at TIMESTAMP DEFAULT NOW(),
+#                data_schema TEXT
+#            );
+#
+#
+#    *************************************************************
+#        """))
+#        conn.execute(text("""
+#            CREATE TABLE IF NOT EXISTS press20_data (
+#                id SERIAL PRIMARY KEY,
+#                shot_num INTEGER,
+#                overallPassFail TEXT,
+#                dataset_id TEXT REFERENCES document_metadata(id),
+#                -- row_data JSONB  -- Store the actual row data
+#                -- fault data
+#                cameratimestamp TEXT,
+#                bottomPassFail TEXT,
+#                topPassFail TEXT,
+#                bottomAnomalyLevel REAL,
+#                topAnomalyLevel REAL,
+#                -- machine data
+#                machineTimestamp TEXT,
+#                ActCycleTime INTEGER,
+#                ActClpClsTime INTEGER,
+#                ActCoolingTime INTEGER,
+#                ActCurrentServodrive_Disp_1 INTEGER,
+#                ActCurrentServodrive_Disp_2 INTEGER,
+#                ActCurrentServodrive_1 INTEGER,
+#                ActCurrentServodrive_2 INTEGER,
+#                ActCushionPosition INTEGER,
+#                ActFeedTemp INTEGER,
+#                ActFill INTEGER,
+#                ActFillTime_0 INTEGER,
+#                ActFillTime_1 INTEGER,
+#                ActFillTime_2 INTEGER,
+#                ActInjectionPos INTEGER,
+#                ActInjFillSpd INTEGER,
+#                ActCalEjtFwdSpd INTEGER,
+#                ActCalEjtRetSpd INTEGER,
+#                ActInjFwdStagePos_0 INTEGER,
+#                ActInjFwdStagePos_1 INTEGER,
+#                ActInjFwdStagePos_2 INTEGER,
+#                Inj_Act_Prs_0 INTEGER,
+#                Inj_Act_Prs_1 INTEGER,
+#                Inj_Act_Prs_2 INTEGER,
+#                ActInjFwdStagePrs_0 INTEGER,
+#                ActInjFwdStagePrs_1 INTEGER,
+#                ActInjFwdStagePrs_2 INTEGER,
+#                ActInjFwdStageTime_0 INTEGER,
+#                ActInjFwdStageTime_1 INTEGER,
+#                ActInjFwdStageTime_2 INTEGER,
+#                ActMotorRPMServodrive_0 INTEGER,
+#                ActMotorRPMServodrive_1 INTEGER,
+#                ActNozzleCurrent INTEGER,
+#                ActNozzlePIDPer INTEGER,
+#                ActNozzleTemp INTEGER,
+#                Actoiltemp INTEGER,
+#                ActProcOfMaxInjPrs INTEGER,
+#                ActProcOfMaxInjPrsPos INTEGER,
+#                ActRearSuckbackSpd INTEGER,
+#                ActRearSuckbackTime INTEGER,
+#                ActRefillTime INTEGER,
+#                ActSysPrsServodrive_0 INTEGER,
+#                ActSysPrsServodrive_1 INTEGER,
+#                ActTempServodrive_0 INTEGER,
+#                ActTempServodrive_1 INTEGER,
+#                ActTempServoMotor_0 INTEGER,
+#                ActTempServoMotor_1 INTEGER,
+#                ActCCprs INTEGER,
+#                ActZone1Temp INTEGER,
+#                ActZone2Temp INTEGER,
+#                ActZone3Temp INTEGER,
+#                ActZone4Temp INTEGER,
+#                ActZone5Temp INTEGER,
+#                ActZone6Temp INTEGER,
+#                PrvActInj1PlastTime INTEGER,
+#                Backprs_value INTEGER,
+#                ActProcMonMinInjPos INTEGER,
+#                flow_value INTEGER
+#            );
+#        """))
+#        conn.execute(text("""
+#            CREATE TABLE IF NOT EXISTS document_rows (
+#                id SERIAL PRIMARY KEY,
+#                dataset_id TEXT REFERENCES document_metadata(id),
+#                row_data JSONB
+#            );
+#        """))
+#        conn.execute(text("""
+#            CREATE TABLE IF NOT EXISTS documents (
+#                id BIGSERIAL PRIMARY KEY,
+#                content TEXT,
+#                metadata JSONB,
+#                embedding VECTOR(768)
+#            );
+#        """))
+#        conn.execute(text("""
+#            CREATE TABLE IF NOT EXISTS chat_history (
+#                id BIGSERIAL PRIMARY KEY,
+#                userId TEXT,
+#                sessionId TEXT, 
+#                message JSONB,
+#            );
+#        """))
+#        conn.commit()
+#        '''
+#
+#def insert_metadata(metadata):
+#    data = {
+#        "id": metadata.id,
+#        "title": metadata.title,
+#        "data_schema": metadata.data_schema,
+#        "created_at": metadata.created_at.isoformat() if metadata.created_at else None
+#    }
+#    supabase.table("document_metadata").upsert(data).execute()
+#
+#
+#def insert_press20_data(data):
+#    data_dict = data.dict(exclude_unset=True)
+#    supabase.table("press20_data").insert(data_dict).execute()
+#
+#
+#def insert_document_row(dataset_id: str, row_data: dict):
+#    data = {"dataset_id": dataset_id, "row_data": row_data}
+#    supabase.table("document_rows").insert(data).execute()
+#
+#
+#def setup_vector_store():
+#    embeddings = OllamaEmbeddings(model="nomic-embed-text:latest", base_url=os.getenv("OLLAMA_URL"))
+#    vector_store = SupabaseVectorStore(
+#        client=supabase,
+#        embedding=embeddings,
+#        table_name="documents",
+#        query_name="match_documents"
+#    )
+#    return vector_store
+#
+#
+#def query_press20_data(query: str):
+#    # Execute SQL-like query via Supabase
+#    response = supabase.rpc("query_press20_data", {"query_text": query}).execute()
+#    return response.data
+#
+#
+#def query_document_rows(query: str):
+#    response = supabase.rpc("query_document_rows", {"query_text": query}).execute()
+#    return response.data
+#
+#
+#def save_chat_message(user_id: str, session_id: str, message: dict):
+#    data = {
+#        "userid": user_id,
+#        "sessionid": session_id,
+#        "message": message
+#    }
+#    supabase.table("chat_history").insert(data).execute()
+#
+#
+#def get_chat_history(session_id: str):
+#    response = supabase.table("chat_history").select("message").eq("sessionid", session_id).order("id").execute()
+#    return [row["message"] for row in response.data]
+#def insert_press20_data(data):
+#    with Session() as session:
+#        session.execute(
+#            text("""
+#                INSERT INTO press20_data (
+#                    shot_num, overallPassFail, dataset_id, cameratimestamp,
+#                    bottomPassFail, topPassFail, bottomAnomalyLevel, topAnomalyLevel,
+#                    machineTimestamp, ActCycleTime, ActClpClsTime, ActCoolingTime, ActCurrentServodrive_Disp_1,
+#                    ActCurrentServodrive_Disp_2, ActCurrentServodrive_1, ActCurrentServodrive_2, ActCushionPosition,
+#                    ActFeedTemp, ActFill, ActFillTime_0, ActFillTime_1, ActFillTime_2, ActInjectionPos,
+#                    ActInjFillSpd, ActCalEjtFwdSpd, ActCalEjtRetSpd, ActInjFwdStagePos_0, ActInjFwdStagePos_1,
+#                    ActInjFwdStagePos_2, Inj_Act_Prs_0, Inj_Act_Prs_1, Inj_Act_Prs_2, ActInjFwdStagePrs_0,
+#                    ActInjFwdStagePrs_1, ActInjFwdStagePrs_2, ActInjFwdStageTime_0, ActInjFwdStageTime_1, ActInjFwdStageTime_2,
+#                    ActMotorRPMServodrive_0, ActMotorRPMServodrive_1, ActNozzleCurrent, ActNozzlePIDPer,
+#                    ActNozzleTemp, Actoiltemp, ActProcOfMaxInjPrs, ActProcOfMaxInjPrsPos, ActRearSuckbackSpd,
+#                    ActRearSuckbackTime, ActRefillTime, ActSysPrsServodrive_0, ActSysPrsServodrive_1,
+#                    ActTempServodrive_0, ActTempServodrive_1, ActTempServoMotor_0, ActTempServoMotor_1,
+#                    ActCCprs, ActZone1Temp, ActZone2Temp,ActZone3Temp, ActZone4Temp, ActZone5Temp,
+#                    ActZone6Temp, PrvActInj1PlastTime, Backprs_value, ActProcMonMinInjPos, flow_value, 
+#                ) VALUES (
+#                    :shot_num, :overallPassFail, :dataset_id, :cameratimestamp,
+#                    :bottomPassFail, :topPassFail, :bottomAnomalyLevel, :topAnomalyLevel,
+#                    :machineTimestamp, :ActCycleTime, :ActClpClsTime, :ActCoolingTime, :ActCurrentServodrive_Disp_1,
+#                    :ActCurrentServodrive_Disp_2, :ActCurrentServodrive_1, :ActCurrentServodrive_2, :ActCushionPosition,
+#                    :ActFeedTemp, :ActFill, :ActFillTime_0, :ActFillTime_1, :ActFillTime_2, :ActInjectionPos,
+#                    :ActInjFillSpd, :ActCalEjtFwdSpd, :ActCalEjtRetSpd, :ActInjFwdStagePos_0, :ActInjFwdStagePos_1,
+#                    :ActInjFwdStagePos_2, :Inj_Act_Prs_0, :Inj_Act_Prs_1, :Inj_Act_Prs_2, :ActInjFwdStagePrs_0,
+#                    :ActInjFwdStagePrs_1, :ActInjFwdStagePrs_2, :ActInjFwdStageTime_0, :ActInjFwdStageTime_1, :ActInjFwdStageTime_2,
+#                    :ActMotorRPMServodrive_0, :ActMotorRPMServodrive_1, :ActNozzleCurrent, :ActNozzlePIDPer,
+#                    :ActNozzleTemp, :Actoiltemp, :ActProcOfMaxInjPrs, :ActProcOfMaxInjPrsPos, :ActRearSuckbackSpd,
+#                    :ActRearSuckbackTime, :ActRefillTime, :ActSysPrsServodrive_0, :ActSysPrsServodrive_1,
+#                    :ActTempServodrive_0, :ActTempServodrive_1, :ActTempServoMotor_0, :ActTempServoMotor_1,
+#                    :ActCCprs, :ActZone1Temp, :ActZone2Temp, :ActZone3Temp, :ActZone4Temp, :ActZone5Temp,
+#                    :ActZone6Temp, :PrvActInj1PlastTime, :Backprs_value, :ActProcMonMinInjPos, :flow_value, 
+#                )
+#            """),
+#            data.dict(exclude_unset=True)
+#        )
+#        session.commit()
+#
+#def insert_document_row(dataset_id: str, row_data: dict):
+#    with Session() as session:
+#        session.execute(
+#            text("""
+#                INSERT INTO document_rows (dataset_id, row_data)
+#                VALUES (:dataset_id, :row_data)
+#            """),
+#            {"dataset_id": dataset_id, "row_data": row_data}
+#        )
+#        session.commit()
+#
+#def setup_vector_store():
+#    embeddings = OllamaEmbeddings(model="nomic-embed-text:latest")
+#    vector_store = SupabaseVectorStore(
+#        client=supabase,
+#        embedding=embeddings,
+#        table_name="documents",
+#        query_name="match_documents"
+#    )
+#    return vector_store
+#'''
