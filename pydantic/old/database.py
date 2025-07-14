@@ -71,7 +71,7 @@ async def query_press20_data(query: str):
         response = await asyncio.to_thread(
             supabase.rpc("query_press20_data", {"query_text": modified_query}).execute
         )
-        return response.data
+        return response.output
     except Exception as e:
         logger.error(f"Error in query_press20_data: {str(e)}", exc_info=True)
         return []
@@ -82,7 +82,7 @@ async def query_document_rows(query: str):
         response = await asyncio.to_thread(
             supabase.rpc("query_document_rows", {"query_text": query}).execute
         )
-        return response.data
+        return response.output
     except Exception as e:
         logger.error(f"Error in query_document_rows: {str(e)}", exc_info=True)
         return []
@@ -93,7 +93,7 @@ async def query_documents(query: str):
         response = await asyncio.to_thread(
             supabase.table("documents").select("*").text_search("content", query).execute
         )
-        return response.data
+        return response.output
     except Exception as e:
         logger.error(f"Error in query_documents: {str(e)}", exc_info=True)
         return []
@@ -132,7 +132,7 @@ async def get_chat_history(session_id: str):
         response = await asyncio.to_thread(
             supabase.table("chat_history").select("message").eq("sessionid", session_id).order("id").execute
         )
-        return [row["message"] for row in response.data]
+        return [row["message"] for row in response.output]
     except Exception as e:
         logger.error(f"Error in get_chat_history: {str(e)}", exc_info=True)
         return []

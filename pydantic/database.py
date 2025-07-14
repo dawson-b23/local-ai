@@ -34,7 +34,7 @@ async def query_document_rows(query: str):
         response = await asyncio.to_thread(
             supabase.rpc("query_document_rows", {"query_text": query}).execute
         )
-        return response.data
+        return response.output
     except Exception as e:
         logger.error(f"Error in query_document_rows: {str(e)}", exc_info=True)
         return []
@@ -45,7 +45,7 @@ async def query_documents(query: str):
         response = await asyncio.to_thread(
             supabase.table("documents").select("*").text_search("content", query).execute
         )
-        return response.data
+        return response.output
     except Exception as e:
         logger.error(f"Error in query_documents: {str(e)}", exc_info=True)
         return []
@@ -69,7 +69,7 @@ async def get_chat_history(session_id: str):
         response = await asyncio.to_thread(
             supabase.table("chat_history").select("message").eq("sessionid", session_id).order("id").execute
         )
-        return [row["message"] for row in response.data]
+        return [row["message"] for row in response.output]
     except Exception:
         print('\n---------- error in get chat history -------')
         return []
@@ -78,6 +78,6 @@ async def get_chat_history(session_id: str):
 async def fetch_sessions():
     try:
         response = await asyncio.to_thread(supabase.table("chat_history").select("sessionid", distinct=True).execute)
-        return [row["sessionid"] for row in response.data]
+        return [row["sessionid"] for row in response.output]
     except Exception:
         print('\n---------- error in fetch sessions -------')

@@ -30,6 +30,7 @@ model = OpenAIModel(
 class Deps:
     client: httpx.AsyncClient
     supabase_key: str
+    supabase: 'supabase.Client'
 
 calculator_agent = Agent(
     model,

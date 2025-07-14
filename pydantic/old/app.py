@@ -79,7 +79,7 @@ async def fetch_sessions():
     #langfuse.update_current_trace(metadata={"action": "fetch_sessions"})
     try:
         response = await asyncio.to_thread(supabase.table("chat_history").select("sessionid", distinct=True).execute)
-        sessions = [row["sessionid"] for row in response.data]
+        sessions = [row["sessionid"] for row in response.output]
         #langfuse.update_current_trace(metadata={"status": "success", "session_count": len(sessions)})
         return sessions
     except Exception as e:

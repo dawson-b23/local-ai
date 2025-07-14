@@ -31,9 +31,9 @@ async def handle_query(query: QueryInput):
             agent = create_master_agent()
             deps = Deps(client=client, supabase_key=os.getenv("SUPABASE_KEY"))
             result = await agent.run(query.chatInput, deps=deps)
-            response_data = str(result.data) if result.data else "No response from model"
-            langfuse.update_current_trace(metadata={"status": "success", "response": response_data})
-            return {"response": response_data}
+            response.output = str(result.data) if result.data else "No response from model"
+            langfuse.update_current_trace(metadata={"status": "success", "response": response.output})
+            return {"response": response.output}
         except Exception as e:
             logger.error(f"Error in handle_query: {str(e)}", exc_info=True)
             langfuse.update_current_trace(metadata={"status": "error", "error": str(e)})

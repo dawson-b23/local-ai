@@ -49,7 +49,7 @@ async def main():
         )
         
         #debug(result)
-        print('Response:', result.data)
+        print('Response:', result.output)
 
 
 if __name__ == '__main__':

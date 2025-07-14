@@ -7,8 +7,10 @@ from supabase import create_client, Client
 from database import save_chat_message, get_chat_history, fetch_sessions
 import uuid
 import os
+import re
 from dotenv import load_dotenv
 from langfuse import observe, get_client
+from datetime import datetime
 
 load_dotenv()
 
@@ -78,7 +80,7 @@ async def fetch_sessions():
     #langfuse.update_current_trace(metadata={"action": "fetch_sessions"})
     try:
         response = await asyncio.to_thread(supabase.table("chat_history").select("sessionid", distinct=True).execute)
-        sessions = [row["sessionid"] for row in response.data]
+        sessions = [row["sessionid"] for row in response.output]
         #langfuse.update_current_trace(metadata={"status": "success", "session_count": len(sessions)})
         return sessions
     except Exception as e:
@@ -126,6 +128,7 @@ async def auth_screen():
 ### main app
 ###
 ######################################
+@observe()
 async def main_app():
     st.image("logo.png", width=150)  # Company logo
 
@@ -175,21 +178,67 @@ async def main_app():
         st.chat_message("user").write(user_query)
 
         # Query FastAPI endpoint with increased timeout
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:  # Increased timeout to 60 seconds
             with st.spinner("Agent is thinking..."):
                 try:
                     query_input = QueryInput(chatInput=user_query, sessionId=st.session_state.session_id)
                     response = await client.post(FASTAPI_URL, json=query_input.model_dump())
                     response.raise_for_status()
-                    response_data = response.json().get("response", "No response from model")
+                    # Get raw response text, no JSON parsing
+                    response_data = response.text
                 except Exception as e:
-                    response_data = f"An error occurred (exception from model response): {str(e)}"
+                    response_data = f"Error: {str(e)}"
+                    print(f"Error details: {str(e)}")
+                    with open("error_log.txt", "a") as f:
+                        f.write(f"{datetime.now()}: {str(e)}\n")
 
-        # Add agent response to session state and save to Supabase
-        assistant_message = {"role": "assistant", "content": response_data}
+        print(response_data)
+        langfuse.update_current_trace()
+        formatted_response = format_llm_response_markdown(response_data)
+        assistant_message = {"role": "assistant", "content": formatted_response}
         st.session_state["messages"].append(assistant_message)
         await save_chat_message(st.session_state.user_id, st.session_state.session_id, assistant_message)
-        st.chat_message("assistant").write(response_data)
+        #st.chat_message("assistant").write(response_data)
+        st.chat_message("assistant").markdown(formatted_response)
+
+
+@observe()
+def format_llm_response_markdown(response: str) -> str:
+    """
+    Cleans and formats LLM response into markdown-ready text for Streamlit.
+    """
+    if not response:
+        return ""
+    
+    # Remove surrounding quotes (if any)
+    response = response.strip()
+    if response.startswith('"') and response.endswith('"'):
+        response = response[1:-1]
+
+    # Remove structured tool tags like <|python_tag|>{...}
+    response = re.sub(r"<\|.*?\|>.*", "", response)
+
+    # get rid of any json elements (if any)
+    response = re.sub("{", "", response)
+    response = re.sub("}", "", response)
+
+    # Replace literal escaped newlines and tabs
+    response = response.replace('\\n', '\n').replace('\\t', '\t')
+
+    # Optional: ensure bullet formatting is consistent (e.g., no extra whitespace)
+    lines = response.splitlines()
+    cleaned_lines = []
+    for line in lines:
+        line = line.strip()
+        if line.startswith('*'):
+            # Ensure space after '*'
+            if not line.startswith('* '):
+                line = '* ' + line[1:].lstrip()
+        cleaned_lines.append(line)
+
+    return '\n'.join(cleaned_lines)
+
+
 
 if __name__ == "__main__":
     if DEPLOY is True:
