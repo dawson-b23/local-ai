@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+# pydantic-ai/models.py
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 

@@ -1,45 +1,31 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from models import QueryInput
-from agents.master_agent import create_master_agent, Deps
-from ingestion import process_file
-from datetime import datetime
+from agents.master_agent import master_agent, Deps
+import httpx
 import os
 from dotenv import load_dotenv
+from supabase import create_client, Client
 from langfuse import observe, get_client
-import httpx
-import logging
-import json
-from pydantic import BaseModel
 
 load_dotenv()
 
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-
 app = FastAPI(title="H&H AI Assistant API")
+supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+
 langfuse = get_client()
 
-class QueryInput(BaseModel):
-    chatInput: str
-    sessionId: str
-
+@app.post("/rag-docs")
 @observe()
 async def handle_query(query: QueryInput):
-    langfuse.update_current_trace(metadata={"query": query.chatInput, "session": query.sessionId})
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            agent = create_master_agent()
             deps = Deps(client=client, supabase_key=os.getenv("SUPABASE_KEY"))
-            result = await agent.run(query.chatInput, deps=deps)
-            response_data = str(result.data) if result.data else "No response from model"
-            langfuse.update_current_trace(metadata={"status": "success", "response": response_data})
-            return {"response": response_data}
+            result = await master_agent.run(query.chatInput, deps=deps)
+            return {"response": result.data if result.data else "No response from model"}
         except Exception as e:
-            logger.error(f"Error in handle_query: {str(e)}", exc_info=True)
             langfuse.update_current_trace(metadata={"status": "error", "error": str(e)})
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error processing query at {datetime.now()}: {str(e)}"
-            )
+            return {"response": f"Error processing query: {str(e)}. Please check if the backend is running."}
 
-app.add_api_route("/rag-docs", handle_query, methods=["POST"])
+@app.get("/health")
+async def health_check():
+    return {"status": "Backend is running"}
