@@ -11,8 +11,12 @@ import re
 from dotenv import load_dotenv
 from langfuse import observe, get_client
 from datetime import datetime
+import logging
 
 load_dotenv()
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # WARNING:
 # change to False to get rid of auth (for testing)
@@ -130,9 +134,7 @@ async def auth_screen():
 ######################################
 @observe()
 async def main_app():
-    st.image("logo.png", width=150)  # Company logo
-
-    # Initialize session state
+    st.image("logo.png", width=150)
     if "session_id" not in st.session_state:
         st.session_state.session_id = str(uuid.uuid4())
     if "messages" not in st.session_state:
@@ -140,13 +142,11 @@ async def main_app():
     if "sessions" not in st.session_state:
         st.session_state.sessions = await fetch_sessions()
     if "user_id" not in st.session_state:
-        st.session_state.user_id = f"anon_{st.session_state.session_id}"
-        st.session_state.user_email = "Anonymous"
+        st.session_state.user_id, st.session_state.user_email = await check_auth()
 
-    # Sidebar
     with st.sidebar:
         st.header("H&H AI Assistant")
-        st.image("logo.png", width=100)  # Smaller logo in sidebar
+        st.image("logo.png", width=100)
         st.write(f"Logged in as: {st.session_state.user_email}")
         if st.button("Logout"):
             await sign_out()
@@ -157,89 +157,58 @@ async def main_app():
             st.session_state.messages = []
             if st.session_state.session_id not in st.session_state.sessions:
                 st.session_state.sessions.append(st.session_state.session_id)
+            st.rerun()
 
-    # Main chat interface
     st.title("H&H AI Assistant")
-    st.write("Please let Dawson know if you have any strange behavior or bugs:")
-    st.write("Email: intern@hhmoldsinc.com || Phone: (832-977-3004)")
-    st.write("Usage: See docs @ https://dawson-b23.github.io/HHDocs/")
+    st.write("Contact Dawson for issues: intern@hhmoldsinc.com | 832-977-3004")
+    st.write("Docs: https://dawson-b23.github.io/HHDocs/")
+    st.write("Try asking 'who are you', 'what can you do', or 'help' for quick info!")
     st.write("Ask your questions below:")
 
-    # Display conversation history
     for msg in st.session_state["messages"]:
-        st.chat_message(msg["role"]).write(msg["content"])
+        st.chat_message(msg["role"]).markdown(msg["content"])
 
-    # Input box for user query
     if user_query := st.chat_input("Type your message here..."):
-        # Add user message to session state and save to Supabase
+        if not user_query.strip():
+            st.error("Please enter a valid query.")
+            return
         user_message = {"role": "user", "content": user_query}
         st.session_state["messages"].append(user_message)
         await save_chat_message(st.session_state.user_id, st.session_state.session_id, user_message)
-        st.chat_message("user").write(user_query)
+        st.chat_message("user").markdown(user_query)
 
-        # Query FastAPI endpoint with increased timeout
-        async with httpx.AsyncClient(timeout=60.0) as client:  # Increased timeout to 60 seconds
-            with st.spinner("Agent is thinking..."):
+        async with httpx.AsyncClient(timeout=float(os.getenv("HTTP_TIMEOUT", 30.0))) as client:
+            with st.spinner("Processing..."):
                 try:
                     langfuse.update_current_trace(session_id=st.session_state.session_id)
                     query_input = QueryInput(chatInput=user_query, sessionId=st.session_state.session_id)
                     response = await client.post(FASTAPI_URL, json=query_input.model_dump())
                     response.raise_for_status()
-                    # Get raw response text, no JSON parsing
                     response_data = response.text
+                    # Strip surrounding quotation marks
+                    if response_data.startswith('"') and response_data.endswith('"'):
+                        response_data = response_data[1:-1]
+                        logger.debug(f"Stripped quotation marks from response: {response_data}")
+                    # Validate response
+                    if response_data.startswith("{") and response_data.endswith("}"):
+                        logger.warning(f"Invalid response format from FastAPI: {response_data}")
+                        response_data = "- Error: Invalid response format. Please try again or contact support."
+                    elif not response_data.strip():
+                        logger.warning("Empty response from FastAPI")
+                        response_data = "- Error: No response received. Please try again or contact support."
+                except httpx.TimeoutException:
+                    logger.error("Timeout in FastAPI request", exc_info=True)
+                    response_data = "- Error: Request timed out."
                 except Exception as e:
-                    response_data = f"Error: {str(e)}"
-                    print(f"Error details: {str(e)}")
-                    with open("error_log.txt", "a") as f:
-                        f.write(f"{datetime.now()}: {str(e)}\n")
+                    logger.error(f"Error in FastAPI request: {str(e)}", exc_info=True)
+                    response_data = f"- Error: {str(e)}"
 
-        print(response_data)
-        langfuse.update_current_trace(session_id=st.session_state.session_id)
-        formatted_response = format_llm_response_markdown(response_data)
-        assistant_message = {"role": "assistant", "content": formatted_response}
-        st.session_state["messages"].append(assistant_message)
-        await save_chat_message(st.session_state.user_id, st.session_state.session_id, assistant_message)
-        #st.chat_message("assistant").write(response_data)
-        st.chat_message("assistant").markdown(formatted_response)
-
-
-@observe()
-def format_llm_response_markdown(response: str) -> str:
-    """
-    Cleans and formats LLM response into markdown-ready text for Streamlit.
-    """
-    if not response:
-        return ""
-    
-    # Remove surrounding quotes (if any)
-    response = response.strip()
-    if response.startswith('"') and response.endswith('"'):
-        response = response[1:-1]
-
-    # Remove structured tool tags like <|python_tag|>{...}
-    response = re.sub(r"<\|.*?\|>.*", "", response)
-
-    # get rid of any json elements (if any)
-    response = re.sub("{", "", response)
-    response = re.sub("}", "", response)
-
-    # Replace literal escaped newlines and tabs
-    response = response.replace('\\n', '\n').replace('\\t', '\t')
-
-    # Optional: ensure bullet formatting is consistent (e.g., no extra whitespace)
-    lines = response.splitlines()
-    cleaned_lines = []
-    for line in lines:
-        line = line.strip()
-        if line.startswith('*'):
-            # Ensure space after '*'
-            if not line.startswith('* '):
-                line = '* ' + line[1:].lstrip()
-        cleaned_lines.append(line)
-
-    return '\n'.join(cleaned_lines)
-
-
+                logger.debug(f"Final response to render: {response_data}")
+                langfuse.update_current_trace(session_id=st.session_state.session_id)
+                assistant_message = {"role": "assistant", "content": response_data}
+                st.session_state["messages"].append(assistant_message)
+                await save_chat_message(st.session_state.user_id, st.session_state.session_id, assistant_message)
+                st.chat_message("assistant").markdown(response_data)
 
 if __name__ == "__main__":
     if DEPLOY is True:

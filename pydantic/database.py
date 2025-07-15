@@ -5,8 +5,13 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from langfuse import observe, get_client
+import logging
 
 load_dotenv()
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 langfuse = get_client()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "http://localhost:8000")
@@ -59,7 +64,7 @@ async def save_chat_message(user_id: str, session_id: str, message: dict):
             "message": message
         }
         await asyncio.to_thread(supabase.table("chat_history").insert(data).execute)
-    except Exception:
+    except Exception as e:
         logger.error(f"Error saving chat message: {str(e)}", exc_info=True)
         pass  # Silently fail to avoid blocking the app
 

@@ -84,30 +84,27 @@ class FileHandler(FileSystemEventHandler):
         self.delete_file(event.src_path)
 
     def process_file(self, file_path: str, event_type: str):
-        """Process a new or modified file."""
-        logger.info("Calling process_file()\n")
+        logger.info(f"Processing file: {file_path} ({event_type})")
         file_ext = os.path.splitext(file_path)[1].lower()
         if file_ext not in ALLOWED_EXTENSIONS or file_ext in IGNORED_EXTENSIONS:
-            logger.info("Extension marked as not in scope()\n")
+            logger.info(f"Skipping file {file_path}: Invalid extension")
             return
 
         file_id = file_path
         file_title = os.path.splitext(os.path.basename(file_path))[0]
-        is_press20 = 'press' in file_title.lower() 
+        is_press20 = 'press' in file_title.lower()
 
         try:
-            # Delete old data
             self.delete_old_data(file_id, is_press20)
-
             if is_press20 and file_ext == '.csv':
-                logger.info("Document is related to press20 data\n")
+                logger.info(f"Processing Press20 CSV: {file_path}")
                 self.process_press20_csv(file_path, file_id, file_title)
             else:
-                logger.info("Document is a regular document\n")
+                logger.info(f"Processing document: {file_path}")
                 self.process_document(file_path, file_id, file_title)
-
         except Exception as e:
-            print(f"Error processing {file_path}: {str(e)}")
+            logger.error(f"error processing {file_path}: {str(e)}", exc_info=true)
+
 
     def delete_old_data(self, file_id: str, is_press20: bool):
         """Delete existing records for the file."""

@@ -12,8 +12,12 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 from langfuse import observe, get_client
+import logging
 
 load_dotenv()
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 client = AsyncOpenAI(
     base_url=os.getenv("OLLAMA_URL", "http://localhost:11434/v1"),
@@ -34,66 +38,53 @@ class Deps:
 
 master_agent = Agent(
     model,
-    system_prompt=
-    #- Calculation questions should use the calculator tool and return the output from the tool call. 
-    #- always only directly return the output of the tool call (unless there is an error).
-    # 5) Always directly return the output of the tool call and nothing else unless the user specifies otherwise.  do not sumamrize. 
-    """
-    # Overview
-    You are an orchestrator agent for H&H Molds Inc. Your sole task is to route user queries to 
-    the appropriate tool and return ONLY the tool's output in markdown format. Do not 
-    generate answers, summarize, or add any text beyond the tool's output unless explicitly instructed.
-
-    ## Tools
-    - **general_rag**: Use for general queries not related to Press20 or calculations.
-    - **press20**: Use for ANY query containing the word "press" (case-insensitive).
-    - **calculator**: Use for queries that are explicit numerical calculations (e.g., "2+2", "calculate 5*3").
-
-    ## Rules
-    1. If the query contains "press" (case-insensitive), call `press20` tool.
-    2. If the query is a numerical calculation (e.g., contains operators like +, -, *, /), call `calculator` tool.
-    3. For all other queries, call `general_rag` tool.
-    4. Return ONLY the tool’s output in markdown format.
-    5. If the tool returns an error or no data, return the error message as-is.
-    6. Do NOT generate any additional text, explanations, or summaries unless the query explicitly asks for tool usage details.
-
-    ## Examples
-    - Query: "List FAILED shots from press20"
-      - Action: Call `press20` tool
-      - Output: [Raw output from press20 tool]
-    - Query: "What is 10 + 10"
-      - Action: Call `calculator` tool
-      - Output: 20
-    - Query: "Summarize the scope meeting"
-      - Action: Call `general_rag` tool
-      - Output: [Raw output from general_rag tool]
-
-    ## Final Reminder
-    - Current date: {}
-    - Do not mention tools used unless asked.
-    - Return ONLY the tool’s output in markdown format.
-    """.format(datetime.now().strftime("%Y-%m-%d")),
-    deps_type=Deps,
-    retries=2
-)
-"""
+    system_prompt="""
 # Overview
-You are an orchestrator agent for H&H Molds Inc. Your sole task is to route user queries to the appropriate tool and return ONLY the tool's output in markdown format. Do not generate answers, summarize, or add any text beyond the tool's output unless explicitly instructed.
+You are an orchestrator agent for H&H Molds Inc. Your sole task is to either return a predefined response for specific queries or route queries to the appropriate tool and return ONLY the tool's output in markdown format. Do not generate answers, summarize, or add any text beyond the predefined response or tool output.
+
+## Predefined Responses
+Return the exact response below for these queries (case-insensitive, ignore extra whitespace):
+- Query: "who are you"
+  - Response: I am the H&H AI Assistant, built to help with injection molding queries for H&H Molds Inc. I can answer questions about Press20 data, perform calculations, and retrieve information from documents.
+- Query: "what can you do"
+  - Response: I can:
+    - Answer questions about Press20 data (e.g., "list failed shots from press20").
+    - Perform numerical calculations (e.g., "2 + 2").
+    - Retrieve and summarize document information (e.g., "summarize the scope meeting").
+    Ask away or check the docs at https://dawson-b23.github.io/HHDocs/!
+- Query: "help"
+  - Response: Need help? I can:
+    - Query Press20 data (e.g., "list failed shots from press20").
+    - Calculate numerical expressions (e.g., "5 * 3").
+    - Search documents (e.g., "summarize the scope meeting").
+    Contact Dawson at intern@hhmoldsinc.com or 832-977-3004 for issues. Docs: https://dawson-b23.github.io/HHDocs/.
 
 ## Tools
-- **general_rag**: Use for general queries not related to Press20 or calculations.
-- **press20**: Use for ANY query containing the word "press" (case-insensitive).
-- **calculator**: Use for queries that are explicit numerical calculations (e.g., "2+2", "calculate 5*3").
+- **general_rag**: Use for queries not matching predefined responses, not related to Press20, and not calculations.
+- **press20**: Use for queries containing "press" (case-insensitive).
+- **calculator**: Use for queries with numerical operators (+, -, *, /).
 
 ## Rules
-1. If the query contains "press" (case-insensitive), call `press20` tool.
-2. If the query is a numerical calculation (e.g., contains operators like +, -, *, /), call `calculator` tool.
-3. For all other queries, call `general_rag` tool.
-4. Return ONLY the tool’s output in markdown format.
-5. If the tool returns an error or no data, return the error message as-is.
-6. Do NOT generate any additional text, explanations, or summaries unless the query explicitly asks for tool usage details.
+1. Check if the query exactly matches (case-insensitive) "who are you", "what can you do", or "help". If so, return the predefined response and do NOT call any tools.
+2. If the query contains "press" (case-insensitive), call `press20` tool.
+3. If the query contains numerical operators (+, -, *, /), call `calculator` tool.
+4. For all other queries, call `general_rag` tool.
+5. Return ONLY the predefined response or the tool’s output in markdown format.
+6. If the tool returns an error or no data, return the error message as-is.
+7. Do NOT generate additional text, explanations, or tool call structures (e.g., JSON).
+8. Do NOT mention tools used unless explicitly asked.
 
 ## Examples
+- Query: "who are you"
+  - Action: Return predefined response
+  - Output: I am the H&H AI Assistant, built to help with injection molding queries for H&H Molds Inc. I can answer questions about Press20 data, perform calculations, and retrieve information from documents.
+- Query: "What Can You Do"
+  - Action: Return predefined response
+  - Output: I can:
+    - Answer questions about Press20 data (e.g., "list failed shots from press20").
+    - Perform numerical calculations (e.g., "2 + 2").
+    - Retrieve and summarize document information (e.g., "summarize the scope meeting").
+    Ask away or check the docs at https://dawson-b23.github.io/HHDocs/!
 - Query: "List FAILED shots from press20"
   - Action: Call `press20` tool
   - Output: [Raw output from press20 tool]
@@ -106,11 +97,26 @@ You are an orchestrator agent for H&H Molds Inc. Your sole task is to route user
 
 ## Final Reminder
 - Current date: {}
-- Do not mention tools used unless asked.
-- Return ONLY the tool’s output in markdown format.
-.format(datetime.now().strftime("%Y-%m-%d"))
-"""
+- Return ONLY the predefined response or tool output in markdown format.
+- Never return JSON structures or explanations unless explicitly requested.
+""".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+    deps_type=Deps,
+    retries=2
+)
 
+@master_agent.tool
+@observe()
+async def general_rag(ctx: RunContext[Deps], query: str) -> str:
+    if not query.strip():
+        logger.error("Empty query received in general_rag")
+        return "Error: Empty query provided."
+    try:
+        result = await rag_agent.run(query, deps=ctx.deps)
+        return result
+    except Exception as e:
+        logger.error(f"Error in general_rag: {str(e)}", exc_info=True)
+        return f"Error: {str(e)}"
+"""
 @master_agent.tool
 @observe()
 async def general_rag(ctx: RunContext[Deps], query: str) -> str:
@@ -121,8 +127,22 @@ async def general_rag(ctx: RunContext[Deps], query: str) -> str:
         return result
     except Exception as e:
         return f"Error in General RAG: {str(e)}"
+"""
 
+@master_agent.tool
+@observe()
+async def calculator(ctx: RunContext[Deps], expression: str) -> str:
+    if not expression.strip():
+        logger.error("Empty expression received in calculator")
+        return "Error: Empty expression provided."
+    try:
+        result = await calculator_agent.run(expression, deps=ctx.deps)
+        return result
+    except Exception as e:
+        logger.error(f"Error in calculator: {str(e)}", exc_info=True)
+        return f"Error: {str(e)}"
 
+"""
 @master_agent.tool
 @observe()
 async def calculator(ctx: RunContext[Deps], expression: str) -> str:
@@ -131,8 +151,22 @@ async def calculator(ctx: RunContext[Deps], expression: str) -> str:
         return result
     except Exception as e: 
         return f"Error in calling calculator_agent tool: {str(e)}"
+"""
 
+@master_agent.tool
+@observe()
+async def press20(ctx: RunContext[Deps], query: str) -> str:
+    if not query.strip():
+        logger.error("Empty query received in press20")
+        return "Error: Empty query provided."
+    try:
+        result = await press20_agent.run(query, deps=ctx.deps)
+        return result
+    except Exception as e:
+        logger.error(f"Error in press20: {str(e)}", exc_info=True)
+        return f"Error: {str(e)}"
 
+"""
 @master_agent.tool
 @observe()
 async def press20(ctx: RunContext[Deps], query: str) -> str:
@@ -147,6 +181,7 @@ async def press20(ctx: RunContext[Deps], query: str) -> str:
 
 async def create_master_agent():
     return master_agent
+"""
 
 """ backup plan to re route manually
 import re
