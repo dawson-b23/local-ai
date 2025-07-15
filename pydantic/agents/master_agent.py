@@ -39,60 +39,86 @@ master_agent = Agent(
     #- always only directly return the output of the tool call (unless there is an error).
     # 5) Always directly return the output of the tool call and nothing else unless the user specifies otherwise.  do not sumamrize. 
     """
-    # Overview 
-    You are an orchestrator agent for the injection molding company H&H Molds Inc. Your only 
-    job is to send the users query to the correct tool and return the output up the chain from 
-    the running the called tool, and nothing else. Do not write summaries or do anything else but call tools. you just need to call 
-    the correct tool, and use its response. 
+    # Overview
+    You are an orchestrator agent for H&H Molds Inc. Your sole task is to route user queries to 
+    the appropriate tool and return ONLY the tool's output in markdown format. Do not 
+    generate answers, summarize, or add any text beyond the tool's output unless explicitly instructed.
 
     ## Tools
-    - General RAG: Use this tool for general RAG look ups (for anything not related to press20). if the query does not include press20, this is the first call. 
-    - Press20: Use this tool for ANY questions or queries related to press20. if the word 'press' is included somewhere in the query use this tool, otherwise do not. 
-    - Calculator: Use this tool if a user asks a question that is a simple calculation. always only Return output from tool call.
+    - **general_rag**: Use for general queries not related to Press20 or calculations.
+    - **press20**: Use for ANY query containing the word "press" (case-insensitive).
+    - **calculator**: Use for queries that are explicit numerical calculations (e.g., "2+2", "calculate 5*3").
 
     ## Rules
-    - Press20 related questions (queries containing 'press') MUST only use the Press20 tool. Anything else should attempt to use General RAG first or other tools.
-    - Do not tell the user what tools you used to perform actions unless they ask
-    - Output must be in markdown format
-
-    ## Instructions
-    1) Call the neccessary tools based on the query
-    2) Calculation questions should use the calculator tool and return the result.
-    3) When you call a tool and get an none-error response, only return the result of that tool to the user.
+    1. If the query contains "press" (case-insensitive), call `press20` tool.
+    2. If the query is a numerical calculation (e.g., contains operators like +, -, *, /), call `calculator` tool.
+    3. For all other queries, call `general_rag` tool.
+    4. Return ONLY the tool’s output in markdown format.
+    5. If the tool returns an error or no data, return the error message as-is.
+    6. Do NOT generate any additional text, explanations, or summaries unless the query explicitly asks for tool usage details.
 
     ## Examples
-    1) 
-    - Input: Can you list the FAIL shots from press20
-      - Action: Use press20_agent to query the database, since 'press' is in the query.
-    - Output: call the press20_agent 
-    2) 
-    - Input: What is 10+10
-      - Action: Use the calculator tool to answer, since this is an equation
-    - Output: call the calculator_agent. 
-    3)
-    - Input: Can you summarize the scope meeting for tech troubleshooting
-      - Action: Use the General_RAG tool to answer, since 'press' is not in the query.
-    - Output: call general rag agent.
+    - Query: "List FAILED shots from press20"
+      - Action: Call `press20` tool
+      - Output: [Raw output from press20 tool]
+    - Query: "What is 10 + 10"
+      - Action: Call `calculator` tool
+      - Output: 20
+    - Query: "Summarize the scope meeting"
+      - Action: Call `general_rag` tool
+      - Output: [Raw output from general_rag tool]
 
-    ## Final Reminders
-    - Here is the current date/time: {}
-    - If no a not good answer (or error) is returned, tell the user to contact Dawson Burgess and write the current time down, and offer to search the web. 
-    - Do not specify what tools were used unless asked by the user.
-    - Output Answers MUST BE IN MARKDOWN FORMAT
-    - Remember, you are only tasked with routing queries, not answering questions. Do not state the tool used or a provide a summary.
+    ## Final Reminder
+    - Current date: {}
+    - Do not mention tools used unless asked.
+    - Return ONLY the tool’s output in markdown format.
     """.format(datetime.now().strftime("%Y-%m-%d")),
     deps_type=Deps,
     retries=2
 )
+"""
+# Overview
+You are an orchestrator agent for H&H Molds Inc. Your sole task is to route user queries to the appropriate tool and return ONLY the tool's output in markdown format. Do not generate answers, summarize, or add any text beyond the tool's output unless explicitly instructed.
+
+## Tools
+- **general_rag**: Use for general queries not related to Press20 or calculations.
+- **press20**: Use for ANY query containing the word "press" (case-insensitive).
+- **calculator**: Use for queries that are explicit numerical calculations (e.g., "2+2", "calculate 5*3").
+
+## Rules
+1. If the query contains "press" (case-insensitive), call `press20` tool.
+2. If the query is a numerical calculation (e.g., contains operators like +, -, *, /), call `calculator` tool.
+3. For all other queries, call `general_rag` tool.
+4. Return ONLY the tool’s output in markdown format.
+5. If the tool returns an error or no data, return the error message as-is.
+6. Do NOT generate any additional text, explanations, or summaries unless the query explicitly asks for tool usage details.
+
+## Examples
+- Query: "List FAILED shots from press20"
+  - Action: Call `press20` tool
+  - Output: [Raw output from press20 tool]
+- Query: "What is 10 + 10"
+  - Action: Call `calculator` tool
+  - Output: 20
+- Query: "Summarize the scope meeting"
+  - Action: Call `general_rag` tool
+  - Output: [Raw output from general_rag tool]
+
+## Final Reminder
+- Current date: {}
+- Do not mention tools used unless asked.
+- Return ONLY the tool’s output in markdown format.
+.format(datetime.now().strftime("%Y-%m-%d"))
+"""
 
 @master_agent.tool
 @observe()
 async def general_rag(ctx: RunContext[Deps], query: str) -> str:
     try:
         result = await rag_agent.run(query, deps=ctx.deps)
-        if not result.output:
+        if not result:
             return "No response from RAG agent."
-        return result.output
+        return result
     except Exception as e:
         return f"Error in General RAG: {str(e)}"
 
@@ -102,9 +128,7 @@ async def general_rag(ctx: RunContext[Deps], query: str) -> str:
 async def calculator(ctx: RunContext[Deps], expression: str) -> str:
     try:
         result = await calculator_agent.run(expression, deps=ctx.deps)
-        #think_result = await think(ctx, expression, "calculator")
-        #return f"Result: {result}\n\nThink verification: {think_result}"
-        return f"Result: {result}"
+        return result
     except Exception as e: 
         return f"Error in calling calculator_agent tool: {str(e)}"
 
@@ -115,11 +139,36 @@ async def press20(ctx: RunContext[Deps], query: str) -> str:
     try:
         result = await press20_agent.run(query, deps=ctx.deps)
         #print(f"Press20 result: {vars(result)}")  # Debug print
-        if not result.data:
+        if not result:
             return "No response from Press20 agent."
-        return result.data
+        return result
     except Exception as e:
         return f"Error in Press20: {str(e)}"
 
 async def create_master_agent():
     return master_agent
+
+""" backup plan to re route manually
+import re
+
+async def preprocess_query(query: str) -> str:
+    # Check for calculation (contains operators)
+    if re.search(r'[\+\-\*/]', query):
+        return "calculator"
+    # Check for Press20
+    if "press" in query.lower():
+        return "press20"
+    # Default to general RAG
+    return "general_rag"
+
+@master_agent.tool
+@observe()
+async def route_query(ctx: RunContext[Deps], query: str)  -> str:
+    tool_name = await preprocess_query(query)
+    if tool_name == "calculator":
+        return await calculator(ctx, query)
+    elif tool_name == "press20":
+        return await press20(ctx, query)
+    else:
+        return await general_rag(ctx, query)
+"""

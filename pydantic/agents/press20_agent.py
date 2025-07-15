@@ -70,7 +70,6 @@ async def query_press20_data(ctx: RunContext[Deps], sql_query: str) -> str:
             return "No data found in press20_data."
         result_lines = []
         for row in response.data:
-            # Extract JSON content from the 'result' column
             json_data = row['result']
             formatted_row = ", ".join([f"{key}: {value}" for key, value in json_data.items() if value is not None])
             result_lines.append(formatted_row)
@@ -79,23 +78,3 @@ async def query_press20_data(ctx: RunContext[Deps], sql_query: str) -> str:
         print(f"Error in query_press20_data: {str(e)}")  # Debug print
         return f"Error querying press20_data: {str(e)}"
 
-"""
-async def query_press20_data(ctx: RunContext[Deps], sql_query: str) -> str:
-    try:
-        response = await asyncio.to_thread(
-            supabase.rpc(
-                "query_press20_data",
-                {"query_text": sql_query}
-            ).execute
-        )
-        if not response.data:
-            return "No data found in press20_data."
-        result_lines = []
-        for row in response.data:
-            formatted_row = ", ".join([f"{key}: {value}" for key, value in row.items() if value is not None])
-            result_lines.append(formatted_row)
-        return "\n".join(result_lines) if result_lines else "No data found in press20_data."
-    except Exception as e:
-        print(f"Error in query_press20_data: {str(e)}")  # Debug print
-        return f"Error querying press20_data: {str(e)}"
-"""

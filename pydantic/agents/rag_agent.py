@@ -86,30 +86,9 @@ async def rag_search(ctx: RunContext[Deps], query: str) -> str:
         results = await vector_store.as_retriever().ainvoke(query)
         if not results:
             return "No relevant documents found."
-        # For summarization queries, generate a summary
-        #if "summarize" in query.lower():
-        #    content = "\n".join([str(doc.page_content) for doc in results])
-        #    summary_prompt = f"Summarize the following content concisely:\n{content}"
-        #    response = await client.chat.completions.create(
-        #        model="llama3.1:8b",
-        #        messages=[
-        #            {"role": "system", "content": "You are a summarization assistant. Provide a concise summary of the provided content."},
-        #            {"role": "user", "content": summary_prompt}
-        #        ]
-        #    )
-        #    return response.choices[0].message.content
         return "\n".join([str(doc.page_content) for doc in results])
     except Exception as e:
         return f"Error in RAG search: {str(e)}"
-#async def rag_search(ctx: RunContext[Deps], query: str) -> str:
-#    try:
-#        vector_store = await setup_vector_store()
-#        results = await vector_store.as_retriever().ainvoke(query)
-#        if not results:
-#            return "No relevant documents found."
-#        return "\n".join([str(doc.page_content) for doc in results])
-#    except Exception as e:
-#        return f"Error searching documents: {str(e)}"
 
 
 @rag_agent.tool

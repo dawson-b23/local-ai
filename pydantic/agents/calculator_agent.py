@@ -48,7 +48,7 @@ async def calculate(ctx: RunContext[Deps], expression: str) -> str:
     try:
         result = numexpr.evaluate(expression)
         #langfuse.update_current_trace(metadata={"status": "success", "result": str(result)})
-        return f"{str(result)}"
+        return str(result)
     except Exception as e:
         logger.error(f"** ** ** ERROR ** ** ** in calculator_tool: {str(e)}", exc_info=True)
         langfuse.update_current_trace(metadata={"status": "error", "error": str(e)})

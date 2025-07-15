@@ -60,7 +60,7 @@ async def save_chat_message(user_id: str, session_id: str, message: dict):
         }
         await asyncio.to_thread(supabase.table("chat_history").insert(data).execute)
     except Exception:
-        print('\n---------- error in save chat messages -------')
+        logger.error(f"Error saving chat message: {str(e)}", exc_info=True)
         pass  # Silently fail to avoid blocking the app
 
 @observe()
