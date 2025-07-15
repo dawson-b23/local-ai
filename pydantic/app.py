@@ -181,6 +181,7 @@ async def main_app():
         async with httpx.AsyncClient(timeout=60.0) as client:  # Increased timeout to 60 seconds
             with st.spinner("Agent is thinking..."):
                 try:
+                    langfuse.update_current_trace(session_id=st.session_state.session_id)
                     query_input = QueryInput(chatInput=user_query, sessionId=st.session_state.session_id)
                     response = await client.post(FASTAPI_URL, json=query_input.model_dump())
                     response.raise_for_status()
@@ -193,7 +194,7 @@ async def main_app():
                         f.write(f"{datetime.now()}: {str(e)}\n")
 
         print(response_data)
-        langfuse.update_current_trace()
+        langfuse.update_current_trace(session_id=st.session_state.session_id)
         formatted_response = format_llm_response_markdown(response_data)
         assistant_message = {"role": "assistant", "content": formatted_response}
         st.session_state["messages"].append(assistant_message)

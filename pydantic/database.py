@@ -50,7 +50,7 @@ async def query_documents(query: str):
         logger.error(f"Error in query_documents: {str(e)}", exc_info=True)
         return []
 
-@observe()
+#@observe()
 async def save_chat_message(user_id: str, session_id: str, message: dict):
     try:
         data = {

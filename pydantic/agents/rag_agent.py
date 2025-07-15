@@ -55,6 +55,7 @@ rag_agent = Agent(
     Always tell the user if you didn't find the answer. Don't make something up just to please them. 
     If you decide to return an sql query, try to run it first and return the result.
 
+    If the user asks what you can do or what you are, simply respond and you dont need to perform rag.
     YOU MUST RETURN FINAL ANSWERS IN MARKDOWN FORMAT.
     """,
 #    system_prompt="""You are a document query assistant for H&H. Use the provided tools to retrieve information from documents or tabular data. Follow these steps:

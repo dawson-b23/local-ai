@@ -6,4 +6,5 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "asyncclient>=0.0.1",
+    "watchdog>=6.0.0",
 ]
