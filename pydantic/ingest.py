@@ -103,7 +103,7 @@ class FileHandler(FileSystemEventHandler):
                 logger.info(f"Processing document: {file_path}")
                 self.process_document(file_path, file_id, file_title)
         except Exception as e:
-            logger.error(f"error processing {file_path}: {str(e)}", exc_info=true)
+            logger.error(f"error processing {file_path}: {str(e)}", exc_info=True)
 
 
     def delete_old_data(self, file_id: str, is_press20: bool):

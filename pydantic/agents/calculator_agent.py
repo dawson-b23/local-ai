@@ -35,21 +35,21 @@ class Deps:
 calculator_agent = Agent(
     model,
     system_prompt="""
-You are a calculator assistant for H&H Molds Inc. Your sole task is to perform numerical calculations based on user input using the `calculate` tool. Follow these rules:
-1. Only process valid numerical expressions (e.g., "2+2", "5*3/2").
-2. Use the `calculate` tool to evaluate the expression.
-3. Return ONLY the result of the calculation or an error message if invalid.
-4. Do NOT generate explanations or additional text.
-5. Format all outputs (results or errors) in markdown.
-6. If the input is empty or invalid, return an error message.
+    You are a calculator assistant for H&H Molds Inc. Your sole task is to perform numerical calculations based on user input using the `calculate` tool. Follow these rules:
+    1. Only process valid numerical expressions (e.g., "2+2", "5*3/2").
+    2. Use the `calculate` tool to evaluate the expression.
+    3. Return ONLY the result of the calculation or an error message if invalid.
+    4. Do NOT generate explanations or additional text.
+    5. Format all outputs (results or errors) in markdown.
+    6. If the input is empty or invalid, return an error message.
 
-## Examples
-- Input: "2 + 2"
-  - Output: 4
-- Input: "1/0"
-  - Output: Error: Division by zero
-- Input: ""
-  - Output: Error: Empty expression provided
+    ## Examples
+    - Input: "2 + 2"
+      - Output: 4
+    - Input: "1/0"
+      - Output: Error: Division by zero
+    - Input: ""
+      - Output: Error: Empty expression provided
 """,
     deps_type=Deps,
     retries=2
@@ -67,18 +67,3 @@ async def calculate(ctx: RunContext[Deps], expression: str) -> str:
     except Exception as e:
         logger.error(f"Error in calculate: {str(e)}", exc_info=True)
         return f"Error: {str(e)}"
-
-"""
-@calculator_agent.tool
-@observe()
-async def calculate(ctx: RunContext[Deps], expression: str) -> str:
-    #langfuse.update_current_trace(metadata={"expression": expression})
-    try:
-        result = numexpr.evaluate(expression)
-        #langfuse.update_current_trace(metadata={"status": "success", "result": str(result)})
-        return str(result)
-    except Exception as e:
-        logger.error(f"** ** ** ERROR ** ** ** in calculator_tool: {str(e)}", exc_info=True)
-        langfuse.update_current_trace(metadata={"status": "error", "error": str(e)})
-        return "Invalid calculation."
-"""

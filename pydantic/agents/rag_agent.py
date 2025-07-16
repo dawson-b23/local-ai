@@ -79,27 +79,16 @@ You are a document query assistant for H&H Molds Inc. Your task is to answer que
 async def rag_search(ctx: RunContext[Deps], query: str) -> str:
     if not query.strip():
         logger.error("Empty query received in rag_search")
-        return "- Error: Empty query provided"
+        return "Error: Empty query provided."
     try:
         vector_store = await setup_vector_store()
         results = await vector_store.as_retriever().ainvoke(query)
         if not results:
-            return "- No relevant documents found"
-        if "summarize" in query.lower():
-            content = "\n".join([str(doc.page_content) for doc in results])
-            summary_prompt = f"Summarize the following content concisely in markdown:\n{content}"
-            response = await client.chat.completions.create(
-                model="llama3.1:8b",
-                messages=[
-                    {"role": "system", "content": "You are a summarization assistant. Provide a concise summary in markdown format using bullet points."},
-                    {"role": "user", "content": summary_prompt}
-                ]
-            )
-            return response.choices[0].message.content
+            return "No relevant documents found."
         return "\n".join([f"- {str(doc.page_content)}" for doc in results])
     except Exception as e:
         logger.error(f"Error in rag_search: {str(e)}", exc_info=True)
-        return f"- Error: {str(e)}"
+        return f"Error: {str(e)}"
 
 @rag_agent.tool
 @observe()
@@ -109,45 +98,46 @@ async def list_documents(ctx: RunContext[Deps]) -> str:
             supabase.table("document_metadata").select("*").execute
         )
         if not response.output:
-            return "- No documents found in document_metadata"
+            return "No documents found in document_metadata."
         return "\n".join([f"- id: {row['id']}, title: {row['title']}" for row in response.output])
     except Exception as e:
         logger.error(f"Error in list_documents: {str(e)}", exc_info=True)
-        return f"- Error: {str(e)}"
+        return f"Error: {str(e)}"
 
 @rag_agent.tool
 @observe()
 async def get_file_contents(ctx: RunContext[Deps], file_id: str) -> str:
     if not file_id.strip():
         logger.error("Empty file_id received in get_file_contents")
-        return "- Error: Empty file_id provided"
+        return "Error: Empty file_id provided."
     try:
         response = await asyncio.to_thread(
             supabase.rpc("get_file_contents", {"file_id": file_id}).execute
         )
         if not response.output:
-            return f"- No text found for file_id: {file_id}"
+            return f"No text found for file_id: {file_id}"
         return f"- File content: {response.output[0].get('document_text', 'No text content')}"
     except Exception as e:
         logger.error(f"Error in get_file_contents: {str(e)}", exc_info=True)
-        return f"- Error: {str(e)}"
+        return f"Error: {str(e)}"
 
 @rag_agent.tool
 @observe()
 async def query_document_rows(ctx: RunContext[Deps], sql_query: str) -> str:
     if not sql_query.strip():
         logger.error("Empty SQL query received in query_document_rows")
-        return "- Error: Empty SQL query provided"
+        return "Error: Empty SQL query provided."
     try:
         response = await asyncio.to_thread(
             supabase.rpc("query_document_rows", {"query_text": sql_query}).execute
         )
         if not response.output:
-            return "- No data found in document_rows"
+            return "No data found in document_rows."
         return "\n".join([f"- {json.dumps(row)}" for row in response.output])
     except Exception as e:
         logger.error(f"Error in query_document_rows: {str(e)}", exc_info=True)
-        return f"- Error: {str(e)}"
+        return f"Error: {str(e)}"
+
 """
 
 @rag_agent.tool
