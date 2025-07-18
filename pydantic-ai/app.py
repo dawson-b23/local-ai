@@ -76,22 +76,13 @@ async def auth_screen():
 async def main_app():
     if "sessions" not in st.session_state:
         st.session_state.sessions = await fetch_sessions(st.session_state.user_id)
-    if "session_titles" not in st.session_state:
-        st.session_state.session_titles = {}  # In-memory titles; persist to DB if needed
     if "session_id" not in st.session_state:
-        st.session_state.session_id = st.session_state.sessions[0] if st.session_state.sessions else str(uuid.uuid4())
+        st.session_state.session_id = st.session_state.sessions[0]['sessionid'] if st.session_state.sessions else str(uuid.uuid4())
     if "messages" not in st.session_state:
         st.session_state.messages = await get_chat_history(st.session_state.session_id)
     if "user_id" not in st.session_state:
         st.session_state.user_id = f"anon_{st.session_state.session_id}"
         st.session_state.user_email = "Anonymous"
-
-    # Compute titles if not cached
-    for session in st.session_state.sessions:
-        if session not in st.session_state.session_titles:
-            messages = await get_chat_history(session)
-            title = messages[0]['content'][:50] + "..." if messages and messages[0]['role'] == 'user' else "Untitled Chat"
-            st.session_state.session_titles[session] = title
 
     with st.sidebar:
         st.header("H&H AI Assistant")
@@ -99,31 +90,36 @@ async def main_app():
         st.write(f"Logged in as: {st.session_state.user_email}")
         if DEPLOY and st.button("Logout"):
             await sign_out()
-
+        
         # Session selector
-        selected_title = st.selectbox("Select Conversation", list(st.session_state.session_titles.values()), index=list(st.session_state.session_titles.values()).index(st.session_state.session_titles.get(st.session_state.session_id, "Untitled Chat")))
-        selected_session = next((k for k, v in st.session_state.session_titles.items() if v == selected_title), None)
-        if selected_session and selected_session != st.session_state.session_id:
+        options = [f"{s['title']} (ID: {s['sessionid']}) - {s['timestamp']}" for s in st.session_state.sessions]
+        current_index = next((i for i, opt in enumerate(options) if st.session_state.session_id in opt), 0)
+        selected_option = st.selectbox("Select Conversation", options, index=current_index)
+        selected_index = options.index(selected_option)
+        selected_session = st.session_state.sessions[selected_index]['sessionid']
+        if selected_session != st.session_state.session_id:
             st.session_state.session_id = selected_session
             st.session_state.messages = await get_chat_history(selected_session)
             st.rerun()
         
         if st.button("New Chat"):
             new_id = str(uuid.uuid4())
-            st.session_state.sessions.append(new_id)
-            st.session_state.session_titles[new_id] = "New Chat"
+            await create_session(new_id, st.session_state.user_id)
+            st.session_state.sessions = await fetch_sessions(st.session_state.user_id)
             st.session_state.session_id = new_id
             st.session_state.messages = []
             st.rerun()
-
-        #Rename current chat (in-memory; add DB update if needed)
-        current_title = st.session_state.session_titles.get(st.session_state.session_id, "Untitled Chat")
+        
+        # Rename current chat
+        current_session = next((s for s in st.session_state.sessions if s['sessionid'] == st.session_state.session_id), None)
+        current_title = current_session['title'] if current_session else "New Chat"
         new_title = st.text_input("Rename current chat", value=current_title)
         if st.button("Rename") and new_title != current_title:
-            st.session_state.session_titles[st.session_state.session_id] = new_title
+            await update_session_title(st.session_state.session_id, new_title)
+            st.session_state.sessions = await fetch_sessions(st.session_state.user_id)
             st.rerun()
-
-        st.markdown("**Help:** Ask about docs, press20 data, calculations, trends, defects, or websearch.")
+        
+        st.markdown("**Help:** Ask about docs, press20 data, calculations, trends, defects.")
         st.markdown("[Docs](https://dawson-b23.github.io/HHDocs/)")
         st.markdown("Contact: intern@hhmoldsinc.com | 832-977-3004")
 
@@ -137,16 +133,18 @@ async def main_app():
         if not user_query.strip():
             st.error("Enter valid query.")
             return
-
         user_msg = {"role": "user", "content": user_query}
         st.session_state.messages.append(user_msg)
         await save_chat_message(st.session_state.user_id, st.session_state.session_id, user_msg)
         with st.chat_message("user"):
             st.markdown(user_query)
 
-        # Auto-update title if first message
-        if len(st.session_state.messages) == 1:
-            st.session_state.session_titles[st.session_state.session_id] = user_query[:50] + "..." if len(user_query) > 50 else user_query 
+        # Auto-update title if "New Chat"
+        current_session = next((s for s in st.session_state.sessions if s['sessionid'] == st.session_state.session_id), None)
+        if current_session and current_session['title'] == "New Chat":
+            new_title = user_query[:50] + "..." if len(user_query) > 50 else user_query
+            await update_session_title(st.session_state.session_id, new_title)
+            st.session_state.sessions = await fetch_sessions(st.session_state.user_id)
 
         with st.spinner("Processing..."):
             try:
@@ -154,10 +152,9 @@ async def main_app():
                 history_str = "\n\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state.messages[:-1]])
                 full_input = f"{history_str}\n\nuser: {user_query}" if history_str else user_query
 
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=60.0) as client:
                     deps = Deps(client=client, supabase=supabase)
                     result = await master_agent.run(full_input, deps=deps)
-                    #result = await master_agent.run(user_query, deps=deps)
                     logger.debug(f"Agent result: {result}")
                     response_text = result.output if hasattr(result, 'output') else str(result) if result else "- **No response.**"
                     rendered = render_markdown(response_text)

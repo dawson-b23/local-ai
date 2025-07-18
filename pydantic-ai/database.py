@@ -62,10 +62,12 @@ async def query_documents(query: str):
 @observe()
 async def save_chat_message(user_id: str, session_id: str, message: dict):
     try:
+        timestamp = datetime.now().isoformat()
         data = {
             "userid": user_id,
             "sessionid": session_id,
-            "message": message
+            "message": message,
+            "timestamp": timestamp  # Add timestamp to each message
         }
         await asyncio.to_thread(supabase.table("chat_history").insert(data).execute)
     except Exception as e:
